@@ -1,77 +1,73 @@
 import streamlit as st
 import pandas as pd
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.colors import HexColor, black, white, gray
-import io
+import numpy as np
+import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Informe Pro", layout="wide")
+# Configuración de página
+st.set_page_config(page_title="Dashboard Pro Atleta", layout="wide")
 
-# --- FUNCIÓN PDF ESTILO "CARTA DE JUGADOR" ---
-def generar_pdf_profesional(nombre, datos):
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
-    
-    # 1. Fondo de la "Carta"
-    c.setFillColor(HexColor("#f4f4f4"))
-    c.rect(50, 400, 500, 350, fill=1, stroke=0)
-    
-    # 2. Encabezado Azul Profesional
-    c.setFillColor(HexColor("#1f77b4"))
-    c.rect(50, 700, 500, 50, fill=1, stroke=0)
-    c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(70, 715, "FICHA TÉCNICA DE RENDIMIENTO")
-    
-    # 3. Nombre del Atleta
-    c.setFillColor(black)
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(70, 660, f"ATLETA: {nombre.upper()}")
-    c.line(70, 650, 500, 650)
-    
-    # 4. Datos organizados en columnas
-    c.setFont("Helvetica-Bold", 12)
-    y = 610
-    for col, val in datos.items():
-        c.setFillColor(HexColor("#555555"))
-        c.drawString(70, y, f"{str(col).upper()}")
-        c.setFillColor(black)
-        c.setFont("Helvetica", 12)
-        c.drawString(250, y, f": {val}")
-        c.setFont("Helvetica-Bold", 12)
-        y -= 25
-        
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    return buffer
+# --- FUNCIONES ---
+def get_arrow_st(curr, prev):
+    if prev is None or pd.isna(prev) or prev == 0: return ""
+    try:
+        c, p = float(curr), float(prev)
+        pct = abs(round(((c - p) / p) * 100))
+        if c > p: return f"▲ (+{pct}%)"
+        elif c < p: return f"▼ (-{pct}%)"
+        return "➖ (0%)"
+    except: return ""
 
-# --- INTERFAZ WEB ---
-st.title("🏆 PLAYER PERFORMANCE DASHBOARD")
-archivo = st.sidebar.file_uploader("Sube tu archivo Excel", type=['xlsx'])
+# --- INTERFAZ ---
+st.title("📊 Dashboard de Rendimiento")
+archivo = st.sidebar.file_uploader("Sube tu Excel 'App_Entrenamiento'", type=['xlsx'])
 
 if archivo:
     try:
-        df = pd.read_excel(archivo, sheet_name='Fatiga y Bienestar')
-        df.columns = df.columns.str.strip()
-        nombre = st.sidebar.selectbox("Selecciona Atleta", df['NOMBRE'].unique())
-        datos = df[df['NOMBRE'] == nombre].iloc[-1]
+        df_base = pd.read_excel(archivo, sheet_name='Base Clientes')
+        df_fatiga = pd.read_excel(archivo, sheet_name='Fatiga y Bienestar')
         
-        # Diseño en pantalla (Web)
-        st.subheader(f"📊 Ficha de: {nombre}")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Salto (CMJ)", f"{datos['CMJ']} cm")
-        c2.metric("VFC", f"{datos['VFC']} ms")
-        c3.metric("RPE", f"{datos['RPE']}/10")
+        # Limpieza
+        df_fatiga['FECHA'] = pd.to_datetime(df_fatiga['FECHA'], dayfirst=True, errors='coerce')
+        df_fatiga = df_fatiga.sort_values('FECHA')
         
-        st.divider()
-        st.table(datos.to_frame(name="Valor"))
+        lista_clientes = sorted(df_base['NOMBRE'].dropna().unique())
+        cliente = st.sidebar.selectbox("👤 Selecciona Atleta:", lista_clientes)
+        df_cli = df_fatiga[df_fatiga['NOMBRE'] == cliente].copy()
         
-        # Descarga
-        pdf_data = generar_pdf_profesional(nombre, datos)
-        st.download_button("📥 Descargar Ficha PDF Pro", pdf_data, f"Ficha_{nombre}.pdf", "application/pdf")
-        
+        if not df_cli.empty:
+            actual = df_cli.iloc[-1]
+            previo = df_cli.iloc[-2] if len(df_cli) > 1 else actual
+            
+            # Métricas
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Salto CMJ (cm)", f"{actual.get('CMJ', 0)}", get_arrow_st(actual.get('CMJ', 0), previo.get('CMJ', 0)))
+            c2.metric("VFC (ms)", f"{actual.get('VFC', 0)}", get_arrow_st(actual.get('VFC', 0), previo.get('VFC', 0)))
+            c3.metric("RPE (Intensidad)", f"{actual.get('RPE', 0)}/10")
+            
+            # ACWR
+            df_cli['Carga'] = pd.to_numeric(df_cli.get('RPE', 0), errors='coerce') * pd.to_numeric(df_cli.get('Duración', 0), errors='coerce')
+            aguda = df_cli['Carga'].tail(7).mean()
+            cronica = df_cli['Carga'].tail(28).mean()
+            acwr = round(aguda / cronica, 2) if cronica > 0 else 0
+            c4.metric("Ratio ACWR", acwr)
+
+            # Gráficos
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("📈 Evolución CMJ")
+                fig, ax = plt.subplots()
+                ax.plot(df_cli['FECHA'], df_cli['CMJ'], marker='o')
+                st.pyplot(fig)
+            with col2:
+                st.subheader("🩹 Notas")
+                perfil = df_base[df_base['NOMBRE'] == cliente].iloc[0]
+                st.write(f"**Historial:** {perfil.get('HISTORIAL DE LESIONES', 'Sin datos')}")
+                st.write(f"**Precauciones:** {perfil.get('PRECAUCIONES', 'Sin datos')}")
+        else:
+            st.warning("No hay datos para este atleta.")
     except Exception as e:
         st.error(f"Error: {e}")
+else:
+    st.info("👋 Sube tu archivo Excel para comenzar.")
 
