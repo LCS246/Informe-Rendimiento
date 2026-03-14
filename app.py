@@ -1,84 +1,91 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import numpy as np
 
-# Configuración de la página para que sea ancha y profesional
-st.set_page_config(page_title="Player Performance Pro", layout="wide")
+# 1. Configuración visual estilo "Oscuro/Premium"
+st.set_page_config(page_title="Apex Reports Pro", layout="wide")
 
-# Estilo CSS personalizado para que sea MUY llamativo (estilo oscuro y neón)
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; }
-    .stMetric { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 15px; }
-    .info-box { background-color: #1f2937; color: white; padding: 20px; border-radius: 15px; border-left: 5px solid #3b82f6; }
-    h1, h2, h3 { color: #f0f6fc; }
+    .main { background-color: #0e1117; color: white; }
+    .stMetric { background-color: #161b22; border: 1px solid #3b82f6; padding: 20px; border-radius: 15px; }
+    .player-card { background: linear-gradient(135deg, #1f2937 0%, #111827 100%); padding: 25px; border-radius: 20px; border: 1px solid #374151; }
+    .injury-alert { background-color: #450a0a; border: 1px solid #f87171; padding: 10px; border-radius: 10px; color: #fca5a5; }
+    h1, h2, h3 { font-family: 'Trebuchet MS'; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🏆 PLAYER INFOGRAPHIC DASHBOARD")
+# 2. Título principal
+st.title("🏆 APEX REPORTS: PLAYER INFOGRAPHIC")
 
-archivo = st.sidebar.file_uploader("📂 Sube tu archivo Excel", type=['xlsx'])
+archivo = st.sidebar.file_uploader("📂 Sube el Excel de Apex", type=['xlsx'])
 
 if archivo:
     try:
-        # Cargamos las hojas
+        # Carga de datos (usando los nombres de tus hojas detectadas)
         df_base = pd.read_excel(archivo, sheet_name='Base Clientes')
-        df_fatiga = pd.read_excel(archivo, sheet_name='Fatiga y Bienestar')
+        # Usamos la hoja de bienestar que tu sistema detectó
+        df_wellness = pd.read_excel(archivo, sheet_name='Respuestas de formulario 1')
         
-        # --- SOLUCIÓN AL ERROR DE COLUMNAS ---
-        # Limpiamos nombres de columnas (quitar espacios y poner en mayúsculas)
+        # Limpieza estándar
         df_base.columns = df_base.columns.str.strip().str.upper()
-        df_fatiga.columns = df_fatiga.columns.str.strip().str.upper()
+        df_wellness.columns = df_wellness.columns.str.strip().str.upper()
         
-        # Filtro de Atleta en la barra lateral
-        if 'NOMBRE' in df_base.columns:
-            atleta = st.sidebar.selectbox("👤 Selecciona Atleta", df_base['NOMBRE'].unique())
-            
-            # Obtener datos del atleta seleccionado
-            datos_base = df_base[df_base['NOMBRE'] == atleta].iloc[0]
-            datos_fatiga = df_fatiga[df_fatiga['NOMBRE'] == atleta].iloc[-1] # Último registro
-            
-            # --- DISEÑO TIPO INFOGRAFÍA ---
-            col1, col2 = st.columns([1, 2])
-            
-            with col1:
-                # Espacio para "Foto" y Datos Base
-                st.markdown(f"""
-                <div class="info-box">
-                    <h2 style='text-align: center;'>{atleta}</h2>
-                    <p><b>EDAD:</b> {datos_base.get('EDAD', 'N/A')}</p>
-                    <p><b>PESO:</b> {datos_base.get('PESO', 'N/A')} kg</p>
-                    <p><b>ALTURA:</b> {datos_base.get('ALTURA', 'N/A')} cm</p>
-                    <hr>
-                    <p style='color: #ef4444;'><b>⚠️ HISTORIAL MÉDICO:</b><br>{datos_base.get('HISTORIAL DE LESIONES', 'Ninguno')}</p>
+        # Selector de Atleta
+        lista_atletas = sorted(df_base['NOMBRE'].dropna().unique())
+        atleta_sel = st.sidebar.selectbox("👤 Seleccionar Atleta", lista_atletas)
+        
+        # Filtrar datos
+        user_base = df_base[df_base['NOMBRE'] == atleta_sel].iloc[0]
+        user_well = df_wellness[df_wellness['NOMBRE'] == atleta_sel].iloc[-1] # Último registro
+
+        # --- DISEÑO DE INFOGRAFÍA ---
+        col_foto, col_stats = st.columns([1, 2.5])
+
+        with col_foto:
+            # Placeholder de foto (aquí podrías poner una imagen real)
+            st.markdown(f"""
+            <div class="player-card">
+                <div style="text-align: center;">
+                    <img src="https://via.placeholder.com/200x200.png?text=FOTO" style="border-radius: 50%; border: 4px solid #3b82f6; margin-bottom: 15px;">
+                    <h2 style="margin:0;">{atleta_sel}</h2>
+                    <p style="color: #9ca3af;">Atleta Apex</p>
                 </div>
-                """, unsafe_allow_html=True)
+                <hr style="border: 0.5px solid #374151;">
+                <p><b>🎂 EDAD:</b> {user_base.get('EDAD', 'N/A')} años</p>
+                <p><b>⚖️ PESO:</b> {user_base.get('PESO', 'N/A')} kg</p>
+                <div class="injury-alert">
+                    <b>⚠️ HISTORIAL:</b><br>{user_base.get('HISTORIAL DE LESIONES', 'Ninguno')}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            with col2:
-                st.subheader("🚀 Métricas de Rendimiento")
-                # Tarjetas grandes y coloridas
-                m1, m2, m3 = st.columns(3)
-                m1.metric("SALTO CMJ", f"{datos_fatiga.get('CMJ', 0)} cm", delta="Pro")
-                m2.metric("VFC (Salud)", f"{datos_fatiga.get('VFC', 0)} ms", delta="Estable")
-                m3.metric("RPE (Carga)", f"{datos_fatiga.get('RPE', 0)}/10", delta="-1", delta_color="inverse")
-                
-                # Gráfico de evolución rápido
-                st.markdown("---")
-                st.subheader("📈 Tendencia de Salto (CMJ)")
-                df_atleta = df_fatiga[df_fatiga['NOMBRE'] == atleta]
-                if not df_atleta.empty:
-                    st.line_chart(df_atleta.set_index(df_atleta.columns[0])['CMJ'])
+        with col_stats:
+            st.subheader("📊 Estado de Forma Actual")
+            
+            # Métricas estilo "Messi"
+            m1, m2, m3 = st.columns(3)
+            
+            # Intentamos sacar datos de tu hoja de wellness (ajusta los nombres si cambian)
+            m1.metric("ÍNDICE WELLNESS", f"{user_well.get('PUNTUACIÓN WELLNESS', 'N/A')}%", "Óptimo")
+            m2.metric("SUEÑO (H)", f"{user_well.get('SUEÑO', 'N/A')}h", "Descanso")
+            m3.metric("RPE MEDIO", f"{user_well.get('RPE', 'N/A')}/10", "-1.5", delta_color="inverse")
 
-            # Tabla completa al final
             st.markdown("---")
-            with st.expander("📝 Ver todos los datos del Excel"):
-                st.dataframe(df_atleta.style.highlight_max(axis=0, color='#1f2937'))
-                
-        else:
-            st.error("❌ No se encontró la columna 'NOMBRE'. Revisa tu Excel.")
-            st.write("Columnas detectadas:", list(df_base.columns))
+            
+            # Gráfico de evolución (Si hay columna de fecha)
+            col_fecha = 'MARCA TEMPORAL' if 'MARCA TEMPORAL' in df_wellness.columns else df_wellness.columns[0]
+            df_hist = df_wellness[df_wellness['NOMBRE'] == atleta_sel]
+            
+            st.subheader("📈 Evolución Wellness (Últimos registros)")
+            st.line_chart(df_hist.set_index(col_fecha).tail(10)[['SUEÑO']])
+
+            # Tabla profesional
+            with st.expander("📋 Ver Detalles Técnicos"):
+                st.dataframe(df_hist.tail(5), use_container_width=True)
 
     except Exception as e:
-        st.error(f"Ocurrió un error: {e}")
+        st.error(f"Error al procesar: {e}")
+        st.info("Asegúrate de que las columnas 'NOMBRE', 'SUEÑO' y 'EDAD' existan.")
 else:
-    st.info("👋 Por favor, sube tu archivo Excel para generar la infografía.")
+    st.info("👋 Sube tu archivo Excel para generar la infografía automáticamente.")
